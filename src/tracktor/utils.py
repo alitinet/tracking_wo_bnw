@@ -15,6 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 import motmetrics as mm
+import pycocotools.mask as rletools
 
 matplotlib.use('Agg')
 
@@ -296,7 +297,7 @@ def get_center(pos):
     y1 = pos[0, 1]
     x2 = pos[0, 2]
     y2 = pos[0, 3]
-    return torch.Tensor([(x2 + x1) / 2, (y2 + y1) / 2]).cuda()
+    return torch.Tensor([(x2 + x1) / 2, (y2 + y1) / 2]).cpu()
 
 
 def get_width(pos):
@@ -313,7 +314,7 @@ def make_pos(cx, cy, width, height):
         cy - height / 2,
         cx + width / 2,
         cy + height / 2
-    ]]).cuda()
+    ]]).cpu()
 
 
 def warp_pos(pos, warp_matrix):
@@ -321,11 +322,34 @@ def warp_pos(pos, warp_matrix):
     p2 = torch.Tensor([pos[0, 2], pos[0, 3], 1]).view(3, 1)
     p1_n = torch.mm(warp_matrix, p1).view(1, 2)
     p2_n = torch.mm(warp_matrix, p2).view(1, 2)
-    return torch.cat((p1_n, p2_n), 1).view(1, -1).cuda()
+    return torch.cat((p1_n, p2_n), 1).view(1, -1).cpu()
+
+
+def compute_non_overlapping_masks(masks):
+
+    masks = masks.detach().numpy()
+    masks = np.array([masks[i][0] for i in range(masks.shape[0])])
+
+    max_prob = np.amax(masks, axis=0)
+
+    for i in range(masks.shape[0]):
+        valid_mask = np.where(np.equal(masks[i], max_prob), masks[i], 0)
+        masks[i] = np.where(valid_mask > 0.5, 1, 0)
+
+        max_prob = np.where(np.equal(masks[i], max_prob), max_prob + 1, max_prob)
+
+    return torch.from_numpy(masks)
+
+
+def to_compressed_rle(mask):
+
+    mask = mask.detach().numpy()
+    rle_mask = rletools.encode(np.asarray(mask.astype("uint8"), order="F"))
+    return rle_mask
 
 
 def get_mot_accum(results, seq):
-    mot_accum = mm.MOTAccumulator(auto_id=True)    
+    mot_accum = mm.MOTAccumulator(auto_id=True)
 
     for i, data in enumerate(seq):
         gt = data['gt']
@@ -335,7 +359,7 @@ def get_mot_accum(results, seq):
             for gt_id, box in gt.items():
                 gt_ids.append(gt_id)
                 gt_boxes.append(box)
-        
+
             gt_boxes = np.stack(gt_boxes, axis=0)
             # x1, y1, x2, y2 --> x1, y1, width, height
             gt_boxes = np.stack((gt_boxes[:, 0],
@@ -345,7 +369,7 @@ def get_mot_accum(results, seq):
                                 axis=1)
         else:
             gt_boxes = np.array([])
-        
+
         track_ids = []
         track_boxes = []
         for track_id, frames in results.items():
@@ -364,9 +388,9 @@ def get_mot_accum(results, seq):
                                     axis=1)
         else:
             track_boxes = np.array([])
-        
+
         distance = mm.distances.iou_matrix(gt_boxes, track_boxes, max_iou=0.5)
-        
+
         mot_accum.update(
             gt_ids,
             track_ids,
@@ -374,17 +398,17 @@ def get_mot_accum(results, seq):
 
     return mot_accum
 
-    
+
 def evaluate_mot_accums(accums, names, generate_overall=False):
     mh = mm.metrics.create()
     summary = mh.compute_many(
-        accums, 
-        metrics=mm.metrics.motchallenge_metrics, 
+        accums,
+        metrics=mm.metrics.motchallenge_metrics,
         names=names,
         generate_overall=generate_overall,)
 
     str_summary = mm.io.render_summary(
-        summary, 
-        formatters=mh.formatters, 
+        summary,
+        formatters=mh.formatters,
         namemap=mm.io.motchallenge_metric_names,)
     print(str_summary)

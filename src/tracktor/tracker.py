@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from scipy.optimize import linear_sum_assignment
 import cv2
 
-from .utils import bbox_overlaps, warp_pos, get_center, get_height, get_width, make_pos
+from .utils import bbox_overlaps, warp_pos, get_center, get_height, get_width, make_pos, compute_non_overlapping_masks, to_compressed_rle
 
 from torchvision.ops.boxes import clip_boxes_to_image, nms
 
@@ -58,13 +58,14 @@ class Tracker:
 			t.pos = t.last_pos[-1]
 		self.inactive_tracks += tracks
 
-	def add(self, new_det_pos, new_det_scores, new_det_features):
+	def add(self, new_det_pos, new_det_scores, new_det_masks, new_det_features):
 		"""Initializes new Track objects and saves them."""
 		num_new = new_det_pos.size(0)
 		for i in range(num_new):
 			self.tracks.append(Track(
 				new_det_pos[i].view(1, -1),
 				new_det_scores[i],
+				to_compressed_rle(new_det_masks[i]),
 				self.track_num + i,
 				new_det_features[i].view(1, -1),
 				self.inactive_patience,
@@ -78,13 +79,19 @@ class Tracker:
 		pos = self.get_pos()
 
 		# regress
-		boxes, scores = self.obj_detect.predict_boxes(pos)
+		# TODO: Here we have positions of the objects in the previous frame
+		# TODO: Now we want to regress them on the current frame!
+
+		boxes, scores, masks = self.obj_detect.predict_boxes_and_masks(pos)
+		#TODO: do it after we keep boxes
+		masks = compute_non_overlapping_masks(masks)
 		pos = clip_boxes_to_image(boxes, blob['img'].shape[-2:])
 
 		s = []
 		for i in range(len(self.tracks) - 1, -1, -1):
 			t = self.tracks[i]
 			t.score = scores[i]
+			t.mask = to_compressed_rle(masks[i])
 			if scores[i] <= self.regression_person_thresh:
 				self.tracks_to_inactive([t])
 			else:
@@ -92,7 +99,7 @@ class Tracker:
 				# t.prev_pos = t.pos
 				t.pos = pos[i].view(1, -1)
 
-		return torch.Tensor(s[::-1]).cuda()
+		return torch.Tensor(s[::-1]).cpu()
 
 	def get_pos(self):
 		"""Get the positions of all active tracks."""
@@ -101,7 +108,7 @@ class Tracker:
 		elif len(self.tracks) > 1:
 			pos = torch.cat([t.pos for t in self.tracks], 0)
 		else:
-			pos = torch.zeros(0).cuda()
+			pos = torch.zeros(0).cpu()
 		return pos
 
 	def get_features(self):
@@ -111,7 +118,7 @@ class Tracker:
 		elif len(self.tracks) > 1:
 			features = torch.cat([t.features for t in self.tracks], 0)
 		else:
-			features = torch.zeros(0).cuda()
+			features = torch.zeros(0).cpu()
 		return features
 
 	def get_inactive_features(self):
@@ -121,12 +128,12 @@ class Tracker:
 		elif len(self.inactive_tracks) > 1:
 			features = torch.cat([t.features for t in self.inactive_tracks], 0)
 		else:
-			features = torch.zeros(0).cuda()
+			features = torch.zeros(0).cpu()
 		return features
 
 	def reid(self, blob, new_det_pos, new_det_scores):
 		"""Tries to ReID inactive tracks with provided detections."""
-		new_det_features = [torch.zeros(0).cuda() for _ in range(len(new_det_pos))]
+		new_det_features = [torch.zeros(0).cpu() for _ in range(len(new_det_pos))]
 
 		if self.do_reid:
 			new_det_features = self.reid_network.test_rois(
@@ -172,15 +179,15 @@ class Tracker:
 				for t in remove_inactive:
 					self.inactive_tracks.remove(t)
 
-				keep = torch.Tensor([i for i in range(new_det_pos.size(0)) if i not in assigned]).long().cuda()
+				keep = torch.Tensor([i for i in range(new_det_pos.size(0)) if i not in assigned]).long().cpu()
 				if keep.nelement() > 0:
 					new_det_pos = new_det_pos[keep]
 					new_det_scores = new_det_scores[keep]
 					new_det_features = new_det_features[keep]
 				else:
-					new_det_pos = torch.zeros(0).cuda()
-					new_det_scores = torch.zeros(0).cuda()
-					new_det_features = torch.zeros(0).cuda()
+					new_det_pos = torch.zeros(0).cpu()
+					new_det_scores = torch.zeros(0).cpu()
+					new_det_features = torch.zeros(0).cpu()
 
 		return new_det_pos, new_det_scores, new_det_features
 
@@ -261,36 +268,41 @@ class Tracker:
 		self.obj_detect.load_image(blob['img'])
 
 		if self.public_detections:
+
 			dets = blob['dets'].squeeze(dim=0)
 			if dets.nelement() > 0:
-				boxes, scores = self.obj_detect.predict_boxes(dets)
+
+				boxes, scores, masks = self.obj_detect.predict_boxes_and_masks(dets)
 			else:
-				boxes = scores = torch.zeros(0).cuda()
+				boxes = scores = torch.zeros(0).cpu()
 		else:
-			boxes, scores = self.obj_detect.detect(blob['img'])
+			boxes, scores, masks = self.obj_detect.detect(blob['img'])
+
 
 		if boxes.nelement() > 0:
 			boxes = clip_boxes_to_image(boxes, blob['img'].shape[-2:])
+			masks = compute_non_overlapping_masks(masks)
 
 			# Filter out tracks that have too low person score
 			inds = torch.gt(scores, self.detection_person_thresh).nonzero().view(-1)
 		else:
-			inds = torch.zeros(0).cuda()
+			inds = torch.zeros(0).cpu()
 
 		if inds.nelement() > 0:
 			det_pos = boxes[inds]
-
 			det_scores = scores[inds]
+			det_masks = masks[inds]
 		else:
-			det_pos = torch.zeros(0).cuda()
-			det_scores = torch.zeros(0).cuda()
+			det_pos = torch.zeros(0).cpu()
+			det_scores = torch.zeros(0).cpu()
+			det_masks = torch.zeros(0).cpu()
 
 		##################
 		# Predict tracks #
 		##################
 
 		num_tracks = 0
-		nms_inp_reg = torch.zeros(0).cuda()
+		nms_inp_reg = torch.zeros(0).cpu()
 		if len(self.tracks):
 			# align
 			if self.do_align:
@@ -329,6 +341,7 @@ class Tracker:
 			keep = nms(det_pos, det_scores, self.detection_nms_thresh)
 			det_pos = det_pos[keep]
 			det_scores = det_scores[keep]
+			det_masks = det_masks[keep]
 
 			# check with every track in a single run (problem if tracks delete each other)
 			for t in self.tracks:
@@ -341,19 +354,22 @@ class Tracker:
 
 				det_pos = det_pos[keep]
 				det_scores = det_scores[keep]
+				det_masks = det_masks[keep]
+
 				if keep.nelement() == 0:
 					break
 
 		if det_pos.nelement() > 0:
 			new_det_pos = det_pos
 			new_det_scores = det_scores
+			new_det_masks = det_masks
 
 			# try to reidentify tracks
 			new_det_pos, new_det_scores, new_det_features = self.reid(blob, new_det_pos, new_det_scores)
 
 			# add new
 			if new_det_pos.nelement() > 0:
-				self.add(new_det_pos, new_det_scores, new_det_features)
+				self.add(new_det_pos, new_det_scores, new_det_masks, new_det_features)
 
 		####################
 		# Generate Results #
@@ -362,7 +378,12 @@ class Tracker:
 		for t in self.tracks:
 			if t.id not in self.results.keys():
 				self.results[t.id] = {}
-			self.results[t.id][self.im_index] = np.concatenate([t.pos[0].cpu().numpy(), np.array([t.score])])
+
+			# self.results[t.id][self.im_index] = np.concatenate([t.pos[0].cpu().numpy(), np.array([t.score])])
+
+			self.results[t.id][self.im_index] = [t.pos[0].cpu().numpy(),
+												 t.mask,
+												 np.array([t.score])]
 
 		for t in self.inactive_tracks:
 			t.count_inactive += 1
@@ -381,10 +402,11 @@ class Tracker:
 class Track(object):
 	"""This class contains all necessary for every individual track."""
 
-	def __init__(self, pos, score, track_id, features, inactive_patience, max_features_num, mm_steps):
+	def __init__(self, pos, score, mask, track_id, features, inactive_patience, max_features_num, mm_steps):
 		self.id = track_id
 		self.pos = pos
 		self.score = score
+		self.mask = mask
 		self.features = deque([features])
 		self.ims = deque([])
 		self.count_inactive = 0
