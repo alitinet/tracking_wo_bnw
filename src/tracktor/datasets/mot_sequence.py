@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
+import pycocotools.mask as rletools
 
 import cv2
 
@@ -16,7 +17,6 @@ from torchvision.transforms import ToTensor
 
 class MOT17Sequence(Dataset):
     """Multiple Object Tracking Dataset.
-
     This dataloader is designed so that it can handle only one sequence, if more have to be
     handled one should inherit from this class.
     """
@@ -174,12 +174,9 @@ class MOT17Sequence(Dataset):
 
     def write_results(self, all_tracks, output_dir):
         """Write the tracks in the format for MOT16/MOT17 sumbission
-
         all_tracks: dictionary with 1 dictionary for every track with {..., i:np.array([x1,y1,x2,y2]), ...} at key track_num
-
         Each file contains these lines:
         <frame>, <id>, <bb_left>, <bb_top>, <bb_width>, <bb_height>, <conf>, <x>, <y>, <z>
-
         Files to sumbit:
         ./MOT16-01.txt
         ./MOT16-02.txt
@@ -385,3 +382,179 @@ class MOT17LOWFPSSequence(MOT17Sequence):
         else:
             self.data = []
             self.no_gt = True
+
+
+class CVPRMOTS20Sequence(MOT17Sequence):
+    """Multiple Object Tracking Dataset.
+
+    This dataloader is designed so that it can handle only one sequence, if more have to be
+    handled one should inherit from this class.
+    """
+
+    def __init__(self, seq_name=None, dets='', vis_threshold=1.0,
+                 normalize_mean=[0.485, 0.456, 0.406],
+                 normalize_std=[0.229, 0.224, 0.225]):
+        """
+        Args:
+            seq_name (string): Sequence to take
+            vis_threshold (float): Threshold of visibility of persons above which they are selected
+        """
+        self._seq_name = seq_name
+        self._dets = dets
+        self._vis_threshold = vis_threshold
+
+        # define path to the data and labels
+        self._mots_dir = osp.join(cfg.DATA_DIR, 'CVPRMOTS20')
+        self._label_dir = osp.join(cfg.DATA_DIR, 'CVPRMOTS20Labels')
+        self._train_folders = os.listdir(os.path.join(self._mots_dir, 'train'))
+        self._test_folders = os.listdir(os.path.join(self._mots_dir, 'test'))
+
+        self.transforms = ToTensor()
+
+        if seq_name is not None:
+            assert seq_name in self._train_folders or seq_name in self._test_folders, \
+                'Image set does not exist: {}'.format(seq_name)
+
+            self.data, self.no_gt = self._sequence()
+        else:
+            self.data = []
+            self.no_gt = True
+
+    # @overwrite
+    def __getitem__(self, idx):
+        """Return the ith image converted to blob"""
+        data = self.data[idx]
+        img = Image.open(data['im_path']).convert("RGB")
+        img = self.transforms(img)
+
+        sample = {}
+        sample['img'] = img
+        sample['dets'] = torch.tensor(data['dets'])
+        sample['img_path'] = data['im_path']
+        sample['gt'] = data['gt']
+        sample['mask'] = data['mask']
+        sample['vis'] = data['vis']
+
+        return sample
+
+    # TODO: get rid of detections
+    def _sequence(self):
+        seq_name = self._seq_name
+        if seq_name in self._train_folders:
+            seq_path = osp.join(self._mots_dir, 'train', seq_name)
+            label_path = osp.join(self._label_dir, 'train')
+        else:
+            seq_path = osp.join(self._mots_dir, 'test', seq_name)
+            label_path = osp.join(self._label_dir, 'test')
+
+        config_file = osp.join(seq_path, 'seqinfo.ini')
+
+        assert osp.exists(config_file), \
+            'Config file does not exist: {}'.format(config_file)
+
+        # TODO update data upload
+        config = configparser.ConfigParser()
+        config.read(config_file)
+        seqLength = int(config['Sequence']['seqLength'])
+        imDir = config['Sequence']['imDir']
+
+        imDir = osp.join(seq_path, imDir)
+        gt_file = osp.join(seq_path, 'gt', 'gt.txt')
+
+        total = []
+        train = []
+        val = []
+
+        boxes = {}
+        masks = {}
+        visibility = {}
+
+        for i in range(1, seqLength+1):
+            boxes[i] = {}
+            masks[i] = {}
+            visibility[i] = {}
+
+        no_gt = False
+        if osp.exists(gt_file):
+            with open(gt_file, "r") as inf:
+                reader = csv.reader(inf, delimiter=' ')
+                for row in reader:
+
+                    # row  = frame, objectid, classid, height, width, rlemask
+                    if int(row[1]) != 10000:
+
+                        # mask
+                        rle_mask = {'size': [int(row[3]), int(row[4])], 'counts': row[5].encode(encoding='UTF-8')}
+                        mask = rletools.decode(rle_mask)
+
+                        # bounding box
+                        box = rletools.toBbox(rle_mask)  # x,y,h,w
+                        bb = np.array([box[0], box[1], box[0] + box[2] - 1, box[1] + box[3] - 1], dtype=np.float32)  # x1,y1,x2,y2
+
+                        # TODO: change id 20XX to the normal one
+                        boxes[int(row[0])][int(row[1])] = bb
+                        masks[int(row[0])][int(row[1])] = mask
+                        # TODO: get rid of it later
+                        visibility[int(row[0])][int(row[1])] = 1.0
+
+        else:
+            no_gt = True
+
+        for i in range(1, seqLength+1):
+            im_path = osp.join(imDir, "{:06d}.jpg".format(i))
+
+            sample = {
+                      'gt': boxes[i],
+                      'mask': masks[i],
+                      'im_path': im_path,
+                      'vis': visibility[i],
+                      'dets': list(boxes[i].values()),
+                     }
+
+            total.append(sample)
+
+        return total, no_gt
+
+    def write_results(self, all_tracks, output_dir):
+
+        """Write the tracks in the format of MOTS20 submission
+
+        all_tracks: dictionary with 1 dictionary for every track with {..., i:[bbox, mask, score ] at key track_num
+
+        Each file contains these lines:
+        <time_frame> <id> <class_id> <img_height> <img_width> <rle>
+
+        # TODO: change the names of files to submit
+        Files to submit:
+        ?
+        """
+
+        assert self._seq_name is not None, "[!] No seq_name, probably using combined database"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        # TODO: change the names of files to submit
+
+        file = osp.join(output_dir, 'MOTS20-' + self._seq_name[6:8]+'.txt')
+
+
+        # writer.writerow([frame+1, i+1, x1+1, y1+1, x2-x1+1, y2-y1+1, -1, -1, -1, -1])
+        #
+        with open(file, "w") as of:
+
+            writer = csv.writer(of, delimiter=' ')
+
+            for i, track in all_tracks.items():
+
+                for frame, segm in track.items():
+
+                    # determine image dimensions from mask
+                    mask = segm[1]
+
+                    class_id = 2  # we have only pedestrians
+                    ped_id = class_id*1000 + i + 1  # mots notation
+
+                    writer.writerow(
+                        # <time_frame> <id> <class_id> <img_height> <img_width> <rle>
+                        [frame + 1,  ped_id,  class_id,  mask['size'][0],  mask['size'][1],  mask['counts'].decode(encoding='UTF-8')])
+
