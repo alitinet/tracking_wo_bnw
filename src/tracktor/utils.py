@@ -348,6 +348,22 @@ def to_compressed_rle(mask):
     return rle_mask
 
 
+def binarize_and_encode_mask(mask, occupied_pixels=None):
+
+    # binarize
+    mask = mask[0].detach().numpy()
+    mask = np.where(occupied_pixels == 1, 0, mask)
+    binary_mask = np.where(mask > 0.5, 1, 0)
+
+    # encode mask
+    encoded_mask = rletools.encode(np.asarray(binary_mask.astype("uint8"), order="F"))
+
+    # compute new occupied pixels
+    occupied_pixels = np.amax(np.array([occupied_pixels, binary_mask]), axis=0)
+
+    return encoded_mask, occupied_pixels
+
+
 def get_mot_accum(results, seq):
     mot_accum = mm.MOTAccumulator(auto_id=True)
 

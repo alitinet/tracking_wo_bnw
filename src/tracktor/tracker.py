@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from scipy.optimize import linear_sum_assignment
 import cv2
 
-from .utils import bbox_overlaps, warp_pos, get_center, get_height, get_width, make_pos, compute_non_overlapping_masks, to_compressed_rle
+from .utils import bbox_overlaps, warp_pos, get_center, get_height, get_width, make_pos, binarize_and_encode_mask, to_compressed_rle
 
 from torchvision.ops.boxes import clip_boxes_to_image, nms
 
@@ -65,7 +65,7 @@ class Tracker:
 			self.tracks.append(Track(
 				new_det_pos[i].view(1, -1),
 				new_det_scores[i],
-				to_compressed_rle(new_det_masks[i]),
+				new_det_masks[i],
 				self.track_num + i,
 				new_det_features[i].view(1, -1),
 				self.inactive_patience,
@@ -84,14 +84,13 @@ class Tracker:
 
 		boxes, scores, masks = self.obj_detect.predict_boxes_and_masks(pos)
 		#TODO: do it after we keep boxes
-		masks = compute_non_overlapping_masks(masks)
 		pos = clip_boxes_to_image(boxes, blob['img'].shape[-2:])
 
 		s = []
 		for i in range(len(self.tracks) - 1, -1, -1):
 			t = self.tracks[i]
 			t.score = scores[i]
-			t.mask = to_compressed_rle(masks[i])
+			t.mask = masks[i]
 			if scores[i] <= self.regression_person_thresh:
 				self.tracks_to_inactive([t])
 			else:
@@ -131,7 +130,7 @@ class Tracker:
 			features = torch.zeros(0).cpu()
 		return features
 
-	def reid(self, blob, new_det_pos, new_det_scores):
+	def reid(self, blob, new_det_pos, new_det_scores, new_det_features):
 		"""Tries to ReID inactive tracks with provided detections."""
 		new_det_features = [torch.zeros(0).cpu() for _ in range(len(new_det_pos))]
 
@@ -171,6 +170,7 @@ class Tracker:
 						self.tracks.append(t)
 						t.count_inactive = 0
 						t.pos = new_det_pos[c].view(1, -1)
+						t.mask  = new_det_masks[c]
 						t.reset_last_pos()
 						t.add_features(new_det_features[c].view(1, -1))
 						assigned.append(c)
@@ -183,13 +183,15 @@ class Tracker:
 				if keep.nelement() > 0:
 					new_det_pos = new_det_pos[keep]
 					new_det_scores = new_det_scores[keep]
+					new_det_masks = new_det_masks[keep]
 					new_det_features = new_det_features[keep]
 				else:
 					new_det_pos = torch.zeros(0).cpu()
 					new_det_scores = torch.zeros(0).cpu()
+					new_det_masks = torch.zeros(0).cpu()
 					new_det_features = torch.zeros(0).cpu()
 
-		return new_det_pos, new_det_scores, new_det_features
+		return new_det_pos, new_det_scores, new_det_masks, new_det_features
 
 	def get_appearances(self, blob):
 		"""Uses the siamese CNN to get the features for all active tracks."""
@@ -281,7 +283,6 @@ class Tracker:
 
 		if boxes.nelement() > 0:
 			boxes = clip_boxes_to_image(boxes, blob['img'].shape[-2:])
-			masks = compute_non_overlapping_masks(masks)
 
 			# Filter out tracks that have too low person score
 			inds = torch.gt(scores, self.detection_person_thresh).nonzero().view(-1)
@@ -365,7 +366,7 @@ class Tracker:
 			new_det_masks = det_masks
 
 			# try to reidentify tracks
-			new_det_pos, new_det_scores, new_det_features = self.reid(blob, new_det_pos, new_det_scores)
+			new_det_pos, new_det_scores, new_det_masks, new_det_features = self.reid(blob, new_det_pos, new_det_scores, new_det_masks)
 
 			# add new
 			if new_det_pos.nelement() > 0:
@@ -375,11 +376,14 @@ class Tracker:
 		# Generate Results #
 		####################
 
+		occupied_pixels = np.zeros((blob['img'].shape[2], blob['img'].shape[3]))
+
 		for t in self.tracks:
 			if t.id not in self.results.keys():
 				self.results[t.id] = {}
 
 			# self.results[t.id][self.im_index] = np.concatenate([t.pos[0].cpu().numpy(), np.array([t.score])])
+			t.mask, occupied_pixels = binarize_and_encode_mask(t.mask, occupied_pixels)
 
 			self.results[t.id][self.im_index] = [t.pos[0].cpu().numpy(),
 												 t.mask,
