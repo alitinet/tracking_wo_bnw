@@ -154,7 +154,7 @@ def plot_tracks(blobs, tracks, gt_tracks=None, output_dir=None, name=None):
 
     im_scales = blobs['im_info'][0, 2]
 
-    tracks = tracks.data.cpu().numpy() / im_scales
+    tracks = tracks.data.cuda().numpy() / im_scales
     num_tracks = tracks.shape[0]
 
     fig, ax = plt.subplots(1, 2, figsize=(12, 6))
@@ -297,7 +297,7 @@ def get_center(pos):
     y1 = pos[0, 1]
     x2 = pos[0, 2]
     y2 = pos[0, 3]
-    return torch.Tensor([(x2 + x1) / 2, (y2 + y1) / 2]).cpu()
+    return torch.Tensor([(x2 + x1) / 2, (y2 + y1) / 2]).cuda()
 
 
 def get_width(pos):
@@ -314,7 +314,7 @@ def make_pos(cx, cy, width, height):
         cy - height / 2,
         cx + width / 2,
         cy + height / 2
-    ]]).cpu()
+    ]]).cuda()
 
 
 def warp_pos(pos, warp_matrix):
@@ -322,36 +322,41 @@ def warp_pos(pos, warp_matrix):
     p2 = torch.Tensor([pos[0, 2], pos[0, 3], 1]).view(3, 1)
     p1_n = torch.mm(warp_matrix, p1).view(1, 2)
     p2_n = torch.mm(warp_matrix, p2).view(1, 2)
-    return torch.cat((p1_n, p2_n), 1).view(1, -1).cpu()
+    return torch.cat((p1_n, p2_n), 1).view(1, -1).cuda()
 
 
-def compute_non_overlapping_masks(masks):
+def compute_non_overlapping_masks(masks, occupied_pixels=None):
 
-    masks = masks.detach().numpy()
+    masks = masks.detach().cpu().numpy()
     masks = np.array([masks[i][0] for i in range(masks.shape[0])])
+    num_masks = masks.shape[0]
+
+    if occupied_pixels is not None:
+        masks = np.append(masks, np.array([occupied_pixels]), axis=0)
 
     max_prob = np.amax(masks, axis=0)
 
-    for i in range(masks.shape[0]):
+    for i in range(num_masks):
         valid_mask = np.where(np.equal(masks[i], max_prob), masks[i], 0)
         masks[i] = np.where(valid_mask > 0.5, 1, 0)
 
-        max_prob = np.where(np.equal(masks[i], max_prob), max_prob + 1, max_prob)
+        max_prob = np.where(np.equal(valid_mask, max_prob), max_prob + 1, max_prob)
 
-    return torch.from_numpy(masks)
+    occupied = np.where(max_prob > 1, 1, 0)
+
+    return torch.from_numpy(masks), occupied
 
 
 def to_compressed_rle(mask):
 
-    mask = mask.detach().numpy()
+    mask = mask.detach().cpu().numpy()
     rle_mask = rletools.encode(np.asarray(mask.astype("uint8"), order="F"))
     return rle_mask
 
-
-def binarize_and_encode_mask(mask, occupied_pixels=None):
+def binarize_and_encode_mask(mask, occupied_pixels):
 
     # binarize
-    mask = mask[0].detach().numpy()
+    mask = mask[0].detach().cpu().numpy()
     mask = np.where(occupied_pixels == 1, 0, mask)
     binary_mask = np.where(mask > 0.5, 1, 0)
 
@@ -428,3 +433,14 @@ def evaluate_mot_accums(accums, names, generate_overall=False):
         formatters=mh.formatters,
         namemap=mm.io.motchallenge_metric_names,)
     print(str_summary)
+
+def mask_img(img, masks, prob_threshold):
+    
+    masks_binary = masks >= prob_threshold
+    mask = torch.sum(masks_binary, axis = 0)
+    mask = mask >= prob_threshold
+    mask = mask.cpu()
+    _, _, width, height = img.shape
+    means = torch.Tensor([[[0.485]], [[0.456]], [[0.406]]]).repeat(1, width, height).cpu()
+
+    return (mask*img + ~mask*means).cpu()
