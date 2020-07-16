@@ -136,11 +136,13 @@ class Tracker:
 		new_det_features = [torch.zeros(0).cuda() for _ in range(len(new_det_pos))]
 
 		if self.do_reid:
-			img = mask_img(blob['img'], new_det_masks, 0.9)
-			#img = blob['img']            
-			new_det_features = self.reid_network.test_rois(
-				img, new_det_pos).data
-
+			for i, new_pos in enumerate(new_det_pos):
+				img = mask_img(blob['img'], new_det_masks[i], 0.9)
+				#img = blob['img']            
+				new_det_features[i] = self.reid_network.test_rois(
+				img, new_pos.unsqueeze(0)).data
+            
+			new_det_features = torch.stack(new_det_features)
 			if len(self.inactive_tracks) >= 1:
 				# calculate appearance distances
 				dist_mat, pos = [], []
@@ -156,11 +158,11 @@ class Tracker:
 					pos = pos[0]
 
 				# calculate IoU distances
-				#iou = bbox_overlaps(pos, new_det_pos)
-				#iou_mask = torch.ge(iou, self.reid_iou_threshold)
-				#iou_neg_mask = ~iou_mask
+				iou = bbox_overlaps(pos, new_det_pos)
+				iou_mask = torch.ge(iou, self.reid_iou_threshold)
+				iou_neg_mask = ~iou_mask
 				# make all impossible assignments to the same add big value
-				#dist_mat = dist_mat * iou_mask.float() + iou_neg_mask.float() * 1000
+				dist_mat = dist_mat * iou_mask.float() + iou_neg_mask.float() * 1000
 				dist_mat = dist_mat.cpu().numpy()
 
 				row_ind, col_ind = linear_sum_assignment(dist_mat)
@@ -187,6 +189,9 @@ class Tracker:
 					new_det_pos = new_det_pos[keep]
 					new_det_scores = new_det_scores[keep]
 					new_det_masks = new_det_masks[keep]
+					#print(new_det_features)
+					#print(keep)
+					#print("-----")
 					new_det_features = new_det_features[keep]
 				else:
 					new_det_pos = torch.zeros(0).cuda()

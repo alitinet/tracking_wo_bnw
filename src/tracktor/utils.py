@@ -435,11 +435,13 @@ def evaluate_mot_accums(accums, names, generate_overall=False):
     print(str_summary)
 
 def mask_img(img, masks, prob_threshold):
-    
-    masks_binary = masks >= prob_threshold
-    mask = torch.sum(masks_binary, axis = 0)
-    mask = mask >= prob_threshold
+    # make masks binary
+    #masks_binary = masks >= prob_threshold
+    #mask = torch.sum(masks_binary, axis = 0)
+    mask = masks >= prob_threshold
     mask = mask.cpu()
+    #print(mask.shape)
+    #print(img.shape)
     _, _, width, height = img.shape
     means = torch.Tensor([[[0.485]], [[0.456]], [[0.406]]]).repeat(1, width, height).cpu()
 
