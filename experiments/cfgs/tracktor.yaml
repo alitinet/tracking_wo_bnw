@@ -1,7 +1,7 @@
 tracktor:
   name: Tracktor++
   # Subfolder name in output/tracker/
-  module_name: MOT17
+  module_name: siamese_new
   desription:
   seed: 12345
   # frcnn or fpn
@@ -12,7 +12,7 @@ tracktor:
   # obj_detect_config: output/frcnn/res101/mot_2017_train/180k/sacred_config.yaml
 
   # fpn
-  obj_detect_model: output/faster_rcnn_fpn_training_mot_17/model_epoch_27.model
+  obj_detect_model: output/all_video.model
   # obj_detect_config: output/fpn/res101/mot_2017_train/voc_init_iccv19/config.yaml
   # obj_detect_weights: output/fpn/res101/mot19_cvpr_train/v1/fpn_1_3.pth
   # obj_detect_config: output/fpn/res101/mot19_cvpr_train/v1/config.yaml
@@ -24,7 +24,7 @@ tracktor:
   # compile video with: `ffmpeg -f image2 -framerate 15 -i %06d.jpg -vcodec libx264 -y movie.mp4 -vf scale=320:-1`
   write_images: False
   # dataset (look into tracker/datasets/factory.py)
-  dataset: mot17_train_FRCNN17
+  dataset: mots20_train
   # [start percentage, end percentage], e.g., [0.0, 0.5] for train and [0.75, 1.0] for val split.
   frame_split: [0.0, 1.0]
 
@@ -39,14 +39,14 @@ tracktor:
     regression_nms_thresh: 0.6
     # motion model settings
     motion_model:
-      enabled: False
+      enabled: True
       # average velocity over last n_steps steps
       n_steps: 1
       # if true, only model the movement of the bounding box center. If false, width and height are also modeled.
       center_only: True
     # DPM or DPM_RAW or 0, raw includes the unfiltered (no nms) versions of the provided detections,
     # 0 tells the tracker to use private detections (Faster R-CNN)
-    public_detections: True
+    public_detections: False
     # How much last appearance features are to keep
     max_features_num: 10
     # Do camera motion compensation
