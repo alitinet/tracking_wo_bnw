@@ -437,22 +437,19 @@ class CVPRMOTS20Sequence(MOT17Sequence):
 
         return sample
 
-    # TODO: get rid of detections
     def _sequence(self):
         seq_name = self._seq_name
         if seq_name in self._train_folders:
             seq_path = osp.join(self._mots_dir, 'train', seq_name)
-            label_path = osp.join(self._label_dir, 'train')
         else:
             seq_path = osp.join(self._mots_dir, 'test', seq_name)
-            label_path = osp.join(self._label_dir, 'test')
 
         config_file = osp.join(seq_path, 'seqinfo.ini')
 
         assert osp.exists(config_file), \
             'Config file does not exist: {}'.format(config_file)
 
-        # TODO update data upload
+
         config = configparser.ConfigParser()
         config.read(config_file)
         seqLength = int(config['Sequence']['seqLength'])
@@ -462,17 +459,13 @@ class CVPRMOTS20Sequence(MOT17Sequence):
         gt_file = osp.join(seq_path, 'gt', 'gt.txt')
 
         total = []
-        train = []
-        val = []
 
         boxes = {}
         masks = {}
-        visibility = {}
 
         for i in range(1, seqLength+1):
             boxes[i] = {}
             masks[i] = {}
-            visibility[i] = {}
 
         no_gt = False
         if osp.exists(gt_file):
@@ -491,11 +484,8 @@ class CVPRMOTS20Sequence(MOT17Sequence):
                         box = rletools.toBbox(rle_mask)  # x,y,h,w
                         bb = np.array([box[0], box[1], box[0] + box[2] - 1, box[1] + box[3] - 1], dtype=np.float32)  # x1,y1,x2,y2
 
-                        # TODO: change id 20XX to the normal one
                         boxes[int(row[0])][int(row[1])] = bb
                         masks[int(row[0])][int(row[1])] = mask
-                        # TODO: get rid of it later
-                        visibility[int(row[0])][int(row[1])] = 1.0
 
         else:
             no_gt = True
@@ -507,7 +497,6 @@ class CVPRMOTS20Sequence(MOT17Sequence):
                       'gt': boxes[i],
                       'mask': masks[i],
                       'im_path': im_path,
-                      'vis': visibility[i],
                       'dets': list(boxes[i].values()),
                      }
 
@@ -524,22 +513,15 @@ class CVPRMOTS20Sequence(MOT17Sequence):
         Each file contains these lines:
         <time_frame> <id> <class_id> <img_height> <img_width> <rle>
 
-        # TODO: change the names of files to submit
-        Files to submit:
-        ?
         """
 
         assert self._seq_name is not None, "[!] No seq_name, probably using combined database"
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        # TODO: change the names of files to submit
 
-        file = osp.join(output_dir, 'MOTS20-' + self._seq_name[6:8]+'.txt')
+        file = osp.join(output_dir, 'MOTS20-' + self._seq_name[6:9]+'.txt')
 
-
-        # writer.writerow([frame+1, i+1, x1+1, y1+1, x2-x1+1, y2-y1+1, -1, -1, -1, -1])
-        #
         with open(file, "w") as of:
 
             writer = csv.writer(of, delimiter=' ')

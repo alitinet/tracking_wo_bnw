@@ -31,7 +31,7 @@ for split in ['1', '2', '3', '5', '6', '10', '15', '30']:
     _sets[name] = (lambda *args, split=split: MOT17LOWFPSWrapper(split, *args))
 
 for split in ['train', 'test', 'all', '01', '02', '05', '06', '07', '09', '11', '12']:
-    # no detections
+    # only one type of detections
     name = f'mots20_{split}'
     _sets[name] = (lambda *args, split=split: CVPRMOTS20Wrapper(split, '', *args))
 
