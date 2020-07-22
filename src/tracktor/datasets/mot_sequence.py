@@ -462,10 +462,12 @@ class CVPRMOTS20Sequence(MOT17Sequence):
 
         boxes = {}
         masks = {}
+        visibility = {}
 
         for i in range(1, seqLength+1):
             boxes[i] = {}
             masks[i] = {}
+            visibility[i] = {}
 
         no_gt = False
         if osp.exists(gt_file):
@@ -486,6 +488,8 @@ class CVPRMOTS20Sequence(MOT17Sequence):
 
                         boxes[int(row[0])][int(row[1])] = bb
                         masks[int(row[0])][int(row[1])] = mask
+                        # we do not have this param, but set to 1 for consistency
+                        visibility[int(row[0])][int(row[1])] = 1.0
 
         else:
             no_gt = True
