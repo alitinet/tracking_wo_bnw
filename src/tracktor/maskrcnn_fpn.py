@@ -49,6 +49,7 @@ class MaskRCNN_FPN(MaskRCNN):
         mask_proposals = [pred_boxes]
         labels = [torch.ones((len(mask_proposals[0]),), dtype=torch.int64)]
 
+        # predict masks
         mask_features = self.roi_heads.mask_roi_pool(self.features, mask_proposals,
                                                            self.preprocessed_images.image_sizes)
         mask_features = self.roi_heads.mask_head(mask_features)
