@@ -1,6 +1,12 @@
 # Tracking with segmentation
 
-You can download the final Siamese network from https://drive.google.com/file/d/1o-SPZLa_zCZ_kdm4M6Qb2HaF7hnoP9LC/view?usp=sharing and put into `output/tracktor/reid/`.
+You can download the final Siamese network from `tba` and put into `output/tracktor/siamese_masked/final/`.
+
+Train the Siamese network by running
+```
+python experiments/scripts/train_reid.py
+```
+
 
 Run algorithm by executing:
 
