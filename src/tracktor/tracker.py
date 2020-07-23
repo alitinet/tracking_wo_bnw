@@ -79,12 +79,7 @@ class Tracker:
 		pos = self.get_pos()
 
 		# regress
-		# TODO: Here we have positions of the objects in the previous frame
-		# TODO: Now we want to regress them on the current frame!
-
 		boxes, scores, masks = self.obj_detect.predict_boxes_and_masks(pos)
-		# TODO: here we use only a regression head to compute the bb of object
-		# TODO: We have to use the mask head to find the segmentation
 		pos = clip_boxes_to_image(boxes, blob['img'].shape[-2:])
 
 		s = []
@@ -96,7 +91,6 @@ class Tracker:
 				self.tracks_to_inactive([t])
 			else:
 				s.append(scores[i])
-				# t.prev_pos = t.pos
 				t.pos = pos[i].view(1, -1)
 
 		return torch.Tensor(s[::-1]).cuda()
@@ -137,8 +131,8 @@ class Tracker:
 
 		if self.do_reid:
 			for i, new_pos in enumerate(new_det_pos):
-				img = mask_img(blob['img'], new_det_masks[i], 0.5)
-				#img = blob['img']            
+				# mask the img for each detection
+				img = mask_img(blob['img'], new_det_masks[i], 0.5)          
 				new_det_features[i] = self.reid_network.test_rois(
 				img, new_pos.unsqueeze(0)).data
             
@@ -189,9 +183,6 @@ class Tracker:
 					new_det_pos = new_det_pos[keep]
 					new_det_scores = new_det_scores[keep]
 					new_det_masks = new_det_masks[keep]
-					#print(new_det_features)
-					#print(keep)
-					#print("-----")
 					new_det_features = new_det_features[keep]
 				else:
 					new_det_pos = torch.zeros(0).cuda()
@@ -379,7 +370,6 @@ class Tracker:
 			new_det_masks = det_masks
 
 			# try to reidentify tracks
-			# new_det_pos, new_det_scores, new_det_masks, new_det_features          
 			new_det_pos, new_det_scores, new_det_masks, new_det_features = self.reid(blob, 
                                                                                      new_det_pos,
                                                                                      new_det_scores,
@@ -397,7 +387,6 @@ class Tracker:
 				self.results[t.id] = {}
                 
 			t.mask, occupied_pixels = binarize_and_encode_mask(t.mask, occupied_pixels)
-			# self.results[t.id][self.im_index] = np.concatenate([t.pos[0].cpu().numpy(), np.array([t.score])])  
 			self.results[t.id][self.im_index] = [t.pos[0].cpu().numpy(),
 												 t.mask,
 												 np.array([t.score])]

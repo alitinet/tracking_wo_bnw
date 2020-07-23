@@ -91,10 +91,6 @@ def evaluate_sequence(trackDB, gtDB, distractor_ids, iou_thres=0.5, minvis=0):
     """
     trackDB, gtDB = preprocessingDB(trackDB, gtDB, distractor_ids, iou_thres, minvis)
     mme, c, fp, g, missed, d, M, allfps, clear_mot_info = clear_mot_hungarian(trackDB, gtDB, iou_thres)
-    #print(mme)
-    #print(c)
-    #print(fp)
-    #print(g)
 
     gt_frames = np.unique(gtDB[:, 0])
     gt_ids = np.unique(gtDB[:, 1])
@@ -234,11 +230,6 @@ def evaluate_tracking(sequences, track_dir, gt_dir):
 
 def evaluate_new(stDB, gtDB, distractor_ids):
 
-    #trackDB = read_txt_to_struct(results)
-    #gtDB = read_txt_to_struct(gt_file)
-
-    #gtDB, distractor_ids = extract_valid_gt_data(gtDB)
-
     metrics, extra_info, clear_mot_info, ML_PT_MT, M, gtDB = evaluate_sequence(stDB, gtDB, distractor_ids)
 
     #print_metrics(' Evaluation', metrics)
@@ -302,9 +293,6 @@ def my_main(_config):
 
             ####################################################################
 
-            #gtDB = read_txt_to_struct(gt_file)
-            #gtDB = gtDB[gtDB[:,7] == 1]
-
             stDB = read_txt_to_struct(res_file)
             gtDB = read_txt_to_struct(gt_file)
             dtDB = read_txt_to_struct(det_file)
@@ -324,12 +312,8 @@ def my_main(_config):
             gtDB = gtDB[gtDB[:,6] == 1]
 
             gt_frames = np.unique(gtDB[:, 0])
-            #st_ids = np.unique(stDB[:, 1])
-            #gt_ids = np.unique(gtDB[:, 1])
-            #dt_ids = np.unique(dtDB[:, 1]) # id always -1
             f_gt = len(gt_frames)
-            #n_gt = len(gt_ids)
-            #n_st = len(st_ids)
+
 
             gt_inds = [{} for i in range(f_gt)]
             #st_inds = [{} for i in range(f_gt)]
@@ -340,9 +324,6 @@ def my_main(_config):
             m_keys = []
             for v in M:
                 m_keys.append(list(v.keys()))
-            #print("new: {}".format(np.unique(gtDB[:, 1])))
-            #print("old: {}".format(gt_ids_old))
-            #print("M: {}".format(np.unique(m_keys)))
 
             # hash the indices to speed up indexing
             #for i in range(gtDB.shape[0]):

@@ -69,8 +69,6 @@ class MOTreID(CVPRMOTS20Sequence):
 		for pers in res:
 			for im in pers:
 				im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-				#print(type(im))
-				#print(im.typestr)
 				im = Image.fromarray(im, mode = "RGB")
 				r.append(self.transform(im))
 		images = torch.stack(r, 0)
@@ -132,13 +130,8 @@ class MOTreID(CVPRMOTS20Sequence):
 
 	def build_crop(self, im_path, gt, mask):
 		im = cv2.imread(im_path)
-		#print(type(im.__array_interface__['typestr']))
 		im = mask_img_build(im, mask, 0.9)
-		#print(type(im.__array_interface__['typestr']))
 		height, width, channels = im.shape
-		#blobs, im_scales = _get_blobs(im)
-		#im = blobs['data'][0]
-		#gt = gt * im_scales[0]
 		# clip to image boundary
 		w = gt[2] - gt[0]
 		h = gt[3] - gt[1]

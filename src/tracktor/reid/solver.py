@@ -3,14 +3,12 @@ import numpy as np
 import os
 import time
 import fnmatch
-#import pickle
 
 import torch
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import LambdaLR
 
 from ..utils import plot_tracks
-#from ..utils import warmup_lr_scheduler
 
 import tensorboardX as tb
 
@@ -93,18 +91,10 @@ class Solver(object):
 
 		# filter out frcnn if this is added to the module
 		parameters = [param for name, param in model.named_parameters() if 'frcnn' not in name]
-		#print('number of all parameters')
-		#print(len(parameters))
-		#parameters = [param for param in parameters if param.requires_grad]
-		#print('number of the parameters that require grad')
-		#print(len(parameters))
 		optim = self.optim(parameters, **self.optim_args)
-		#warmup_factor = 1. / 1000
-		#warmup_iters = min(1000, len(train_loader.dataset) - 1)
-
+		
 		if self.lr_scheduler_lambda:
 			scheduler = LambdaLR(optim, lr_lambda=self.lr_scheduler_lambda)
-			#scheduler = warmup_lr_scheduler(optim, warmup_iters, warmup_factor)
 		else:
 			scheduler = None
 
@@ -141,8 +131,7 @@ class Solver(object):
 			now = time.time()
 
 			# VALIDATION
-			#if val_loader and log_nth:
-			if val_loader:
+			if val_loader and log_nth:
 				model.eval()
 				for i, batch in enumerate(val_loader):
 
@@ -157,25 +146,14 @@ class Solver(object):
 						break
 					
 				model.train()
+				print('VAL')
 				for k,v in self._val_losses.items():
 					last_log_nth_losses = self._val_losses[k][-log_nth:]
 					val_loss = np.mean(last_log_nth_losses)
-					print('VAL')
 					print('%s: %.3f' % (k, val_loss))
 					self.val_writer.add_scalar(k, val_loss, (epoch+1) * iter_per_epoch)
 
 			for i, batch in enumerate(train_loader, 1):
-				#inputs, labels = Variable(batch[0]), Variable(batch[1])
-				
-				#print(batch[0].shape)
-				#img = batch[0][0][0]
-				#img = img.mul(255).permute(1, 2, 0).byte().numpy()
-				#saveas = f'good_pic_{i}.pkl'
-				#print(f'saving {saveas}')
-			#	np.savetxt(saveas, img, delimiter=',')
-				#output = open(saveas, 'wb')
-				#pickle.dump(img, output)
-				#output.close()
 
 				optim.zero_grad()
 				losses = model.sum_losses(batch, **model_args)
@@ -201,32 +179,27 @@ class Solver(object):
 						
 	
 			# VALIDATION
-		#	if val_loader and log_nth:
-		#		model.eval()
-		#		for i, batch in enumerate(val_loader):
+			if val_loader and log_nth:
+				model.eval()
+				for i, batch in enumerate(val_loader):
 
-#					losses = model.sum_losses(batch, **model_args)
+					losses = model.sum_losses(batch, **model_args)
 
-#					for k,v in losses.items():
-#						if k not in self._val_losses.keys():
-#							self._val_losses[k] = []
-#						self._val_losses[k].append(v.data.cpu().numpy())
-#
-#					if i >= log_nth:
-#						break
+					for k,v in losses.items():
+						if k not in self._val_losses.keys():
+							self._val_losses[k] = []
+						self._val_losses[k].append(v.data.cpu().numpy())
+
+					if i >= log_nth:
+						break
 					
-#				model.train()
-#				for k,v in self._losses.items():
-#					last_log_nth_losses = self._val_losses[k][-log_nth:]
-#					val_loss = np.mean(last_log_nth_losses)
-#					print('VAL')
-#					print('%s: %.3f' % (k, val_loss))
-#					self.val_writer.add_scalar(k, val_loss, (epoch+1) * iter_per_epoch)
-
-				#blobs_val = data_layer_val.forward()
-				#tracks_val = model.val_predict(blobs_val)
-				#im = plot_tracks(blobs_val, tracks_val)
-				#self.val_writer.add_image('val_tracks', im, (epoch+1) * iter_per_epoch)
+				model.train()
+				print('VAL')
+				for k,v in self._val_losses.items():
+					last_log_nth_losses = self._val_losses[k][-log_nth:]
+					val_loss = np.mean(last_log_nth_losses)
+					print('%s: %.3f' % (k, val_loss))
+					self.val_writer.add_scalar(k, val_loss, (epoch+1) * iter_per_epoch)
 
 			self.snapshot(model, (epoch+1)*iter_per_epoch)
 

@@ -38,17 +38,6 @@ def my_main(_config, reid):
     with open(sacred_config, 'w') as outfile:
         yaml.dump(_config, outfile, default_flow_style=False)
 
-    ##########################
-    # Initialize the modules #
-    ##########################
-  #  print("[*] Building CNN")
-   # network = resnet50(pretrained=False, **reid['cnn'])
-    #network.load_state_dict(torch.load("output/tracktor/reid/res50-mot17-batch_hard/ResNet_iter_25245.pth",
-    #                             map_location=lambda storage, loc: storage))
-    
-  #  network.train()
-   # network.cuda()
-
     #########################
     # Initialize dataloader #
     #########################
@@ -68,27 +57,11 @@ def my_main(_config, reid):
     # Initialize the modules #
     ##########################
     print("[*] Building CNN")
-    network = resnet50(pretrained=False, **reid['cnn'])
-    network.load_state_dict(torch.load("output/tracktor/reid/res50-mot17-batch_hard/ResNet_iter_25245.pth",
+    network = resnet50(pretrained=True, **reid['cnn'])
+    # network.load_state_dict(torch.load("output/tracktor/reid/res50-mot17-batch_hard/ResNet_iter_25245.pth",
                                  map_location=lambda storage, loc: storage))
 
-    flag = False
-    if flag:
-        for p in network.parameters():
-            p.requires_grad = False
-        
-        for p in network.fc.parameters():
-            p.requires_grad = True
-        
-        for p in network.bn_fc.parameters():
-            p.requires_grad = True
-        
-        for p in network.relu_fc.parameters():
-            p.requires_grad = True
-
-        for p in network.fc_out.parameters():
-            p.requires_grad = True
-
+    
     network.train()
     network.cuda()
 
@@ -101,17 +74,12 @@ def my_main(_config, reid):
     # from Hermans et al.
     lr = reid['solver']['optim_args']['lr']
     iters_per_epoch = len(db_train)
-    # we want to keep lr until iter 15000 and from there to iter 25000 a exponential decay
-    #warmup_factor = 1. / 1000
-    #warmup_iters = min(10000, len(db_train.dataset) - 1)
-#
-    #lr_scheduler = torch.utils.warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
-    l = eval("lambda epoch: 1 if epoch*{} < 2000 else 0.001**((epoch*{} - 2000)/(5000-2000))".format(
+    
+    # we want to keep lr until iter 3000 and from there to iter 5000 a exponential decay
+    l = eval("lambda epoch: 1 if epoch*{} < 3000 else 0.001**((epoch*{} - 3000)/(5000-3000))".format(
                                                                 iters_per_epoch,  iters_per_epoch))
-    #else:
-    #   l = None
+
     max_epochs = 5000 // len(db_train.dataset) + 1 if 5000 % len(db_train.dataset) else 5000 // len(db_train.dataset)
-    #max_epochs = 1
     solver = Solver(output_dir, tb_dir, lr_scheduler_lambda=l)
     solver.train(network, db_train, db_val, max_epochs, 50, model_args=reid['model_args'])
 

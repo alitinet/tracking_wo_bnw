@@ -1,11 +1,11 @@
 reid:
-  name: val4
-  module_name: run14_crop_img_mask
+  name: siamese_masked
+  module_name: final
   desription:
   seed: 12345
   # smth like MOT_train, KITTI_train_Pedestrian
-  db_train: mot_reid_small_train
-  db_val: mot_reid_small_val
+  db_train: mot_reid_train
+  db_val: False
 
   model_args:
     # Recommended for loss: batch_all, batch_hard

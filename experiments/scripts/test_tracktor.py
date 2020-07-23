@@ -77,7 +77,7 @@ def main(tracktor, reid, _config, _log, _run):
     sacred.commands.print_config(_run)
 
     # set all seeds
-    #torch.manual_seed(tracktor['seed'])
+    torch.manual_seed(tracktor['seed'])
     torch.cuda.manual_seed(tracktor['seed'])
     np.random.seed(tracktor['seed'])
     torch.backends.cudnn.deterministic = True
@@ -139,24 +139,10 @@ def main(tracktor, reid, _config, _log, _run):
                 num_frames += 1
         results = tracker.get_results()
 
-        # frame_result = results[0][0]
-        # plot(frames[0]['img'][0], [frame_result[0]], [frame_result[1]])
-
         time_total += time.time() - start
 
         _log.info(f"Tracks found: {len(results)}")
         _log.info(f"Runtime for {seq}: {time.time() - start :.2f} s.")
-
-        #mot_results = {}
-        #for track in results:
-        #    for frame in results[track]:
-        #        mot_results[track][frame] = np.concatenate(results[track][frame][0], results[track][frame][2])
-
-
-        #if seq.no_gt:
-        #    _log.info(f"No GT data for evaluation available.")
-        #else:
-        #    mot_accums.append(get_mot_accum(mot_results, seq))
 
         _log.info(f"Writing predictions to: {output_dir}")
         seq.write_results(results, output_dir)
