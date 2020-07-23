@@ -1,7 +1,8 @@
 # from model.test import _get_blobs
 
-from .mot_sequence import MOT17Sequence
+from .mot_sequence import CVPRMOTS20Sequence
 from ..config import get_output_dir
+from ..utils import mask_img_build
 
 import cv2
 from PIL import Image
@@ -12,7 +13,7 @@ import torch
 from torchvision.transforms import CenterCrop, Normalize, Compose, RandomHorizontalFlip, RandomCrop, ToTensor, RandomResizedCrop
 
 
-class MOTreID(MOT17Sequence):
+class MOTreID(CVPRMOTS20Sequence):
 	"""Multiple Object Tracking Dataset.
 
 	This class builds samples for training of a simaese net. It returns a tripple of 2 matching and 1 not
@@ -23,6 +24,7 @@ class MOTreID(MOT17Sequence):
 
 	def __init__(self, seq_name, split, vis_threshold, P, K, max_per_person, crop_H, crop_W,
 				transform, normalize_mean=None, normalize_std=None):
+		print(seq_name)
 		super().__init__(seq_name, vis_threshold=vis_threshold)
 
 		self.P = P
@@ -39,7 +41,6 @@ class MOTreID(MOT17Sequence):
 			raise NotImplementedError("Tranformation not understood: {}".format(transform))
 
 		self.build_samples()
-
 		if split == 'train':
 			pass
 		elif split == 'small_train':
@@ -68,7 +69,9 @@ class MOTreID(MOT17Sequence):
 		for pers in res:
 			for im in pers:
 				im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-				im = Image.fromarray(im)
+				#print(type(im))
+				#print(im.typestr)
+				im = Image.fromarray(im, mode = "RGB")
 				r.append(self.transform(im))
 		images = torch.stack(r, 0)
 
@@ -92,15 +95,17 @@ class MOTreID(MOT17Sequence):
 		for sample in self.data:
 			im_path = sample['im_path']
 			gt = sample['gt']
+			mask = sample['mask']
 
 			for k,v in tracks.items():
 				if k in gt.keys():
-					v.append({'id':k, 'im_path':im_path, 'gt':gt[k]})
+					v.append({'id':k, 'im_path':im_path, 'gt':gt[k], 'mask':mask[k]})
 					del gt[k]
+					del mask[k]
 
 			# For all remaining BB in gt new tracks are created
 			for k,v in gt.items():
-				tracks[k] = [{'id':k, 'im_path':im_path, 'gt':v}]
+				tracks[k] = [{'id':k, 'im_path':im_path, 'gt':v, 'mask':mask[k]}]
 
 		# sample max_per_person images and filter out tracks smaller than 4 samples
 		#outdir = get_output_dir("siamese_test")
@@ -111,10 +116,10 @@ class MOTreID(MOT17Sequence):
 				pers = []
 				if l > self.max_per_person:
 					for i in np.random.choice(l, self.max_per_person, replace=False):
-						pers.append(self.build_crop(v[i]['im_path'], v[i]['gt']))
+						pers.append(self.build_crop(v[i]['im_path'], v[i]['gt'], v[i]['mask']))
 				else:
 					for i in range(l):
-						pers.append(self.build_crop(v[i]['im_path'], v[i]['gt']))
+						pers.append(self.build_crop(v[i]['im_path'], v[i]['gt'], v[i]['mask']))
 
 				#for i,v in enumerate(pers):
 				#	cv2.imwrite(osp.join(outdir, str(k)+'_'+str(i)+'.png'),v)
@@ -125,8 +130,11 @@ class MOTreID(MOT17Sequence):
 
 		self.data = res
 
-	def build_crop(self, im_path, gt):
+	def build_crop(self, im_path, gt, mask):
 		im = cv2.imread(im_path)
+		#print(type(im.__array_interface__['typestr']))
+		im = mask_img_build(im, mask, 0.9)
+		#print(type(im.__array_interface__['typestr']))
 		height, width, channels = im.shape
 		#blobs, im_scales = _get_blobs(im)
 		#im = blobs['data'][0]

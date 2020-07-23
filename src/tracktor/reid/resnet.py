@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 import torch.utils.model_zoo as model_zoo
-from torchvision.models.resnet import Bottleneck
+from torchvision.models.resnet import Bottleneck, BasicBlock
 import torchvision.models as models
 from torchvision.transforms import Resize, Compose, ToPILImage, ToTensor
 
@@ -273,7 +273,7 @@ class ResNet(models.ResNet):
         updated_state_dict.update(pretrained_state_dict)
         self.load_state_dict(updated_state_dict)
 
-
+# https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 def resnet50(pretrained=False, **kwargs):
     """Constructs a ResNet-50 model.
     Args:
@@ -282,4 +282,24 @@ def resnet50(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
         model.load_pretrained_dict(model_zoo.load_url(model_urls['resnet50']))
+    return model
+
+def resnet18(pretrained=False, **kwargs):
+    """Constructs a ResNet-18 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
+    if pretrained:
+        model.load_pretrained_dict(model_zoo.load_url(model_urls['resnet18']))
+    return model
+
+def resnet34(pretrained=False, **kwargs):
+    """Constructs a ResNet-34 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
+    if pretrained:
+        model.load_pretrained_dict(model_zoo.load_url(model_urls['resnet34']))
     return model

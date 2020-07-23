@@ -14,13 +14,14 @@ import yaml
 from tqdm import tqdm
 import sacred
 from sacred import Experiment
-from tracktor.frcnn_fpn import FRCNN_FPN
+from tracktor.maskrcnn_fpn import MaskRCNN_FPN
 from tracktor.config import get_output_dir
 from tracktor.datasets.factory import Datasets
 from tracktor.oracle_tracker import OracleTracker
 from tracktor.tracker import Tracker
 from tracktor.reid.resnet import resnet50
 from tracktor.utils import interpolate, plot_sequence, get_mot_accum, evaluate_mot_accums
+import matplotlib.pyplot as plt
 
 ex = Experiment()
 
@@ -31,12 +32,52 @@ ex.add_config(ex.configurations[0]._conf['tracktor']['reid_config'])
 ex.add_named_config('oracle', 'experiments/cfgs/oracle_tracktor.yaml')
 
 
+def plot(img, boxes, masks, prob_threshold=0.5):
+    fig, ax = plt.subplots(1, dpi=96)
+
+    img = img.mul(255).permute(1, 2, 0).byte().numpy()
+    width, height,_ = img.shape
+
+    ax.imshow(img)
+    fig.set_size_inches(width / 80, height / 80)
+
+    colors = np.random.rand(len(boxes), 3)
+
+    # plot bounding box and mask
+    for i, box in enumerate(boxes):
+
+        # add bounding box
+        rect = plt.Rectangle(
+            (box[0], box[1]),
+            box[2] - box[0],
+            box[3] - box[1],
+            fill=False,
+            color=colors[i],
+            linewidth=1.0)
+        ax.add_patch(rect)
+
+        mask = masks[i]
+
+        # add mask
+        for channel in range(3):
+            img[:, :, channel] = np.where(mask >= prob_threshold,
+                                          img[:, :, channel] * 0.3 + 0.7 * colors[i][channel] * 255,
+                                          img[:, :, channel])
+
+    ax.imshow(img)
+    plt.axis('off')
+    plt.savefig('tracktors.png')
+
+
+
 @ex.automain
 def main(tracktor, reid, _config, _log, _run):
+
+
     sacred.commands.print_config(_run)
 
     # set all seeds
-    torch.manual_seed(tracktor['seed'])
+    #torch.manual_seed(tracktor['seed'])
     torch.cuda.manual_seed(tracktor['seed'])
     np.random.seed(tracktor['seed'])
     torch.backends.cudnn.deterministic = True
@@ -56,7 +97,8 @@ def main(tracktor, reid, _config, _log, _run):
     # object detection
     _log.info("Initializing object detector.")
 
-    obj_detect = FRCNN_FPN(num_classes=2)
+    obj_detect = MaskRCNN_FPN(num_classes=2)
+
     obj_detect.load_state_dict(torch.load(_config['tracktor']['obj_detect_model'],
                                map_location=lambda storage, loc: storage))
 
@@ -70,17 +112,14 @@ def main(tracktor, reid, _config, _log, _run):
     reid_network.eval()
     reid_network.cuda()
 
-    # tracktor
-    if 'oracle' in tracktor:
-        tracker = OracleTracker(obj_detect, reid_network, tracktor['tracker'], tracktor['oracle'])
-    else:
-        tracker = Tracker(obj_detect, reid_network, tracktor['tracker'])
+    tracker = Tracker(obj_detect, reid_network, tracktor['tracker'])
 
     time_total = 0
     num_frames = 0
     mot_accums = []
     dataset = Datasets(tracktor['dataset'])
     for seq in dataset:
+
         tracker.reset()
 
         start = time.time()
@@ -88,6 +127,11 @@ def main(tracktor, reid, _config, _log, _run):
         _log.info(f"Tracking: {seq}")
 
         data_loader = DataLoader(seq, batch_size=1, shuffle=False)
+
+        frames = []
+        for j in range(35):
+            frames.append(next(iter(data_loader)))
+
         for i, frame in enumerate(tqdm(data_loader)):
             if len(seq) * tracktor['frame_split'][0] <= i <= len(seq) * tracktor['frame_split'][1]:
                 with torch.no_grad():
@@ -95,26 +139,24 @@ def main(tracktor, reid, _config, _log, _run):
                 num_frames += 1
         results = tracker.get_results()
 
+        # frame_result = results[0][0]
+        # plot(frames[0]['img'][0], [frame_result[0]], [frame_result[1]])
+
         time_total += time.time() - start
 
         _log.info(f"Tracks found: {len(results)}")
         _log.info(f"Runtime for {seq}: {time.time() - start :.2f} s.")
 
-        if tracktor['interpolate']:
-            results = interpolate(results)
+        #mot_results = {}
+        #for track in results:
+        #    for frame in results[track]:
+        #        mot_results[track][frame] = np.concatenate(results[track][frame][0], results[track][frame][2])
 
-        if seq.no_gt:
-            _log.info(f"No GT data for evaluation available.")
-        else:
-            mot_accums.append(get_mot_accum(results, seq))
+
+        #if seq.no_gt:
+        #    _log.info(f"No GT data for evaluation available.")
+        #else:
+        #    mot_accums.append(get_mot_accum(mot_results, seq))
 
         _log.info(f"Writing predictions to: {output_dir}")
         seq.write_results(results, output_dir)
-
-        if tracktor['write_images']:
-            plot_sequence(results, seq, osp.join(output_dir, tracktor['dataset'], str(seq)))
-
-    _log.info(f"Tracking runtime for all sequences (without evaluation or image writing): "
-              f"{time_total:.2f} s for {num_frames} frames ({num_frames / time_total:.2f} Hz)")
-    if mot_accums:
-        evaluate_mot_accums(mot_accums, [str(s) for s in dataset if not s.no_gt], generate_overall=True)

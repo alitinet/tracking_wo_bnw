@@ -137,7 +137,7 @@ class Tracker:
 
 		if self.do_reid:
 			for i, new_pos in enumerate(new_det_pos):
-				img = mask_img(blob['img'], new_det_masks[i], 0.9)
+				img = mask_img(blob['img'], new_det_masks[i], 0.5)
 				#img = blob['img']            
 				new_det_features[i] = self.reid_network.test_rois(
 				img, new_pos.unsqueeze(0)).data

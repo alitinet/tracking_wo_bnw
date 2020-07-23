@@ -535,7 +535,7 @@ class CVPRMOTS20Sequence(MOT17Sequence):
             os.makedirs(output_dir)
         # TODO: change the names of files to submit
 
-        file = osp.join(output_dir, 'MOTS20-' + self._seq_name[6:8]+'.txt')
+        file = osp.join(output_dir, 'MOTS20-' + self._seq_name +'.txt')
 
 
         # writer.writerow([frame+1, i+1, x1+1, y1+1, x2-x1+1, y2-y1+1, -1, -1, -1, -1])

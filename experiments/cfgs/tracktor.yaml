@@ -1,7 +1,7 @@
 tracktor:
   name: Tracktor++
   # Subfolder name in output/tracker/
-  module_name: siamese_new
+  module_name: siamese_retrained_wtf # where training img are also separately masked
   desription:
   seed: 12345
   # frcnn or fpn
@@ -17,14 +17,14 @@ tracktor:
   # obj_detect_weights: output/fpn/res101/mot19_cvpr_train/v1/fpn_1_3.pth
   # obj_detect_config: output/fpn/res101/mot19_cvpr_train/v1/config.yaml
 
-  reid_weights: output/tracktor/reid/res50-mot17-batch_hard/ResNet_iter_25245.pth
+  reid_weights: output/tracktor/run14_crop_img_mask/val4/ResNet_iter_2896.pth
   reid_config: output/tracktor/reid/res50-mot17-batch_hard/sacred_config.yaml
 
   interpolate: False
   # compile video with: `ffmpeg -f image2 -framerate 15 -i %06d.jpg -vcodec libx264 -y movie.mp4 -vf scale=320:-1`
   write_images: False
   # dataset (look into tracker/datasets/factory.py)
-  dataset: mots20_train
+  dataset: mots20_test
   # [start percentage, end percentage], e.g., [0.0, 0.5] for train and [0.75, 1.0] for val split.
   frame_split: [0.0, 1.0]
 

@@ -3,12 +3,14 @@ import numpy as np
 import os
 import time
 import fnmatch
+#import pickle
 
 import torch
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import LambdaLR
 
 from ..utils import plot_tracks
+#from ..utils import warmup_lr_scheduler
 
 import tensorboardX as tb
 
@@ -61,21 +63,20 @@ class Solver(object):
 
 		# Delete old snapshots (keep minimum 3 latest)
 		snapshots_iters = []
-
 		onlyfiles = [f for f in os.listdir(self.output_dir) if os.path.isfile(os.path.join(self.output_dir, f))]
-
 		for f in onlyfiles:
-			if fnmatch.fnmatch(f, 'ResNet_iters_*.pth'):
+			if fnmatch.fnmatch(f, 'ResNet_iter_*.pth'):
 				snapshots_iters.append(int(f.split('_')[2][:-4]))
 
 		snapshots_iters.sort()
-
+		
 		for i in range(len(snapshots_iters) - 3):
 			filename = model.name + '_iter_{:d}'.format(snapshots_iters[i]) + '.pth'
 			filename = os.path.join(self.output_dir, filename)
+			open(filename, 'w').close()
 			os.remove(filename)
 
-	def train(self, model, train_loader, val_loader=None, num_epochs=10, log_nth=0, model_args={}):
+	def train(self, model, train_loader, val_loader, num_epochs, log_nth, model_args={}):
 		"""
 		Train a given model with the provided data.
 
@@ -92,10 +93,18 @@ class Solver(object):
 
 		# filter out frcnn if this is added to the module
 		parameters = [param for name, param in model.named_parameters() if 'frcnn' not in name]
+		#print('number of all parameters')
+		#print(len(parameters))
+		#parameters = [param for param in parameters if param.requires_grad]
+		#print('number of the parameters that require grad')
+		#print(len(parameters))
 		optim = self.optim(parameters, **self.optim_args)
+		#warmup_factor = 1. / 1000
+		#warmup_iters = min(1000, len(train_loader.dataset) - 1)
 
 		if self.lr_scheduler_lambda:
 			scheduler = LambdaLR(optim, lr_lambda=self.lr_scheduler_lambda)
+			#scheduler = warmup_lr_scheduler(optim, warmup_iters, warmup_factor)
 		else:
 			scheduler = None
 
@@ -131,35 +140,9 @@ class Solver(object):
 
 			now = time.time()
 
-			for i, batch in enumerate(train_loader, 1):
-				#inputs, labels = Variable(batch[0]), Variable(batch[1])
-				
-
-				optim.zero_grad()
-				losses = model.sum_losses(batch, **model_args)
-				losses['total_loss'].backward()
-				optim.step()
-
-				for k,v in losses.items():
-					if k not in self._losses.keys():
-						self._losses[k] = []
-					self._losses[k].append(v.data.cpu().numpy())
-
-				if log_nth and i % log_nth == 0:
-					next_now = time.time()
-					print('[Iteration %d/%d] %.3f s/it' % (i + epoch * iter_per_epoch,
-																  iter_per_epoch * num_epochs, (next_now-now)/log_nth))
-					now = next_now
-
-					for k,v in self._losses.items():
-						last_log_nth_losses = self._losses[k][-log_nth:]
-						train_loss = np.mean(last_log_nth_losses)
-						print('%s: %.3f' % (k, train_loss))
-						self.writer.add_scalar(k, train_loss, i + epoch * iter_per_epoch)
-						
-	
 			# VALIDATION
-			if val_loader and log_nth:
+			#if val_loader and log_nth:
+			if val_loader:
 				model.eval()
 				for i, batch in enumerate(val_loader):
 
@@ -174,10 +157,71 @@ class Solver(object):
 						break
 					
 				model.train()
-				for k,v in self._losses.items():
+				for k,v in self._val_losses.items():
 					last_log_nth_losses = self._val_losses[k][-log_nth:]
 					val_loss = np.mean(last_log_nth_losses)
+					print('VAL')
+					print('%s: %.3f' % (k, val_loss))
 					self.val_writer.add_scalar(k, val_loss, (epoch+1) * iter_per_epoch)
+
+			for i, batch in enumerate(train_loader, 1):
+				#inputs, labels = Variable(batch[0]), Variable(batch[1])
+				
+				#print(batch[0].shape)
+				#img = batch[0][0][0]
+				#img = img.mul(255).permute(1, 2, 0).byte().numpy()
+				#saveas = f'good_pic_{i}.pkl'
+				#print(f'saving {saveas}')
+			#	np.savetxt(saveas, img, delimiter=',')
+				#output = open(saveas, 'wb')
+				#pickle.dump(img, output)
+				#output.close()
+
+				optim.zero_grad()
+				losses = model.sum_losses(batch, **model_args)
+				losses['total_loss'].backward()
+				optim.step()
+
+				for k,v in losses.items():
+					if k not in self._losses.keys():
+						self._losses[k] = []
+					self._losses[k].append(v.data.cpu().numpy())
+				
+				if log_nth and i % log_nth == 0:
+					next_now = time.time()
+					print('[Iteration %d/%d] %.3f s/it' % (i + epoch * iter_per_epoch,
+																  iter_per_epoch * num_epochs, (next_now-now)/log_nth))
+					now = next_now
+
+					for k,v in self._losses.items():
+						last_log_nth_losses = self._losses[k][-log_nth:]
+						train_loss = np.mean(last_log_nth_losses)
+						print('%s: %.3f' % (k, train_loss))
+						self.writer.add_scalar(k, train_loss, i + epoch * iter_per_epoch)
+						
+	
+			# VALIDATION
+		#	if val_loader and log_nth:
+		#		model.eval()
+		#		for i, batch in enumerate(val_loader):
+
+#					losses = model.sum_losses(batch, **model_args)
+
+#					for k,v in losses.items():
+#						if k not in self._val_losses.keys():
+#							self._val_losses[k] = []
+#						self._val_losses[k].append(v.data.cpu().numpy())
+#
+#					if i >= log_nth:
+#						break
+					
+#				model.train()
+#				for k,v in self._losses.items():
+#					last_log_nth_losses = self._val_losses[k][-log_nth:]
+#					val_loss = np.mean(last_log_nth_losses)
+#					print('VAL')
+#					print('%s: %.3f' % (k, val_loss))
+#					self.val_writer.add_scalar(k, val_loss, (epoch+1) * iter_per_epoch)
 
 				#blobs_val = data_layer_val.forward()
 				#tracks_val = model.val_predict(blobs_val)

@@ -13,8 +13,7 @@ class MOTreIDWrapper(Dataset):
 
 	def __init__(self, split, dataloader):
 
-		train_folders = ['MOT17-02', 'MOT17-04', 'MOT17-05', 'MOT17-09', 'MOT17-10',
-				         'MOT17-11', 'MOT17-13']
+		train_folders = ['MOTS20-02', 'MOTS20-05', 'MOTS20-09', 'MOTS20-11']
 
 		self._dataloader = MOTreID(None, split=split, **dataloader)
 
